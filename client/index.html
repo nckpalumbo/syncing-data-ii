@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://npmcdn.com/babel-core@5.8.38/browser.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="text/babel" >
+        "use strict";
+
+        //Let - canvas etc
+        let canvas;
+        let ctx;
+        let socket;
+
+        let sendBufferCanvas;
+        let sendBufferCtx;
+        let clearButton;
+        
+        //Random num
+        function RandomNum(num) {
+          return Math.floor(Math.random()* num);
+        }
+
+        //Let - Mouse etc        
+        let mouseX;
+        let mouseY;
+        let mousedown;
+        let previousX;
+        let previousY;
+
+        let colorChoice;
+        let brushType;
+        let brushSize;
+        let brushTypeSelect;
+        let brushSizeSelect;
+
+        const init = () => {
+          canvas = document.querySelector("#topCanvas");
+		  ctx = canvas.getContext('2d');
+            
+          ctx.fillStyle = "#000000";
+          ctx.strokeStyle = "#000000"
+          brushSize = 3;
+          brushType = "circle";
+            
+          //Query setup
+          colorChoice = document.querySelector("#colorChoice");
+          brushTypeSelect = document.querySelector("#typeChoice");
+          brushSizeSelect = document.querySelector("#sizeChoice");
+          clearButton  = document.querySelector("#clearButton");
+                
+          //Get mouse location
+          canvas.addEventListener('mousemove', (e) => {
+            getMousePos(canvas, e);
+            
+            if(mousedown) {
+              switch(brushType) {
+                  case 'line':
+                    ctx.lineWidth = brushSize;
+                    ctx.beginPath();
+                    ctx.moveTo(previousX, previousY);
+                    ctx.lineTo(mouseX, mouseY);
+                    ctx.closePath();
+                    ctx.stroke();
+                    break;
+                  case 'rectangle':
+                    ctx.fillRect(mouseX, mouseY, brushSize, brushSize);
+                    break;
+                  case 'circle':
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, brushSize, 0, 2*Math.PI);
+                    ctx.closePath();
+                    ctx.fill();
+                    break;
+
+                  default:
+                    ctx.beginPath();
+                    ctx.arc(mouseX, mouseY, brushSize, 0, 2*Math.PI);
+                    ctx.fill();
+                }
+               drawToBufferCtx();
+            }
+          }, false);
+            
+          //Get mouse press
+          canvas.addEventListener('mousedown', () => {
+              mousedown = true;
+          });
+          
+          canvas.addEventListener('mouseup', () => {
+              mousedown = false;
+          });
+                    
+          colorChoice.onchange = (e) => {
+             ctx.fillStyle = e.target.value;
+             sendBufferCtx.fillStyle = e.target.value;
+            
+             ctx.strokeStyle = e.target.value;
+             sendBufferCtx.strokeStyle = e.target.value;
+          };
+          
+          brushTypeSelect.onchange = (e) => {
+             brushType = e.target.value;
+          };
+          
+          brushSizeSelect.onchange = (e) => {
+             brushSize = e.target.value;
+          };
+          
+          clearButton.onclick = (e) => {
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+             sendBufferCtx.clearRect(0, 0, canvas.width, canvas.height);
+             socket.emit('clearCanvas');
+          };
+            
+          socket = io.connect();
+          connectSocket();
+          
+        };
+        
+        window.onload = init;
+
+        //Buffer canvas
+        const drawToBufferCtx = () => {
+            switch(brushType) {
+              case 'line':
+                sendBufferCtx.lineWidth = brushSize;
+                sendBufferCtx.beginPath();
+                sendBufferCtx.moveTo(previousX, previousY);
+                sendBufferCtx.lineTo(mouseX, mouseY);
+                sendBufferCtx.closePath();
+                sendBufferCtx.stroke();
+                break;
+              case 'rectangle':
+                sendBufferCtx.fillRect(mouseX, mouseY, brushSize, brushSize);
+                break;
+              case 'circle':
+                sendBufferCtx.beginPath();
+                sendBufferCtx.arc(mouseX, mouseY, brushSize, 0, 2*Math.PI);
+                sendBufferCtx.closePath();
+                sendBufferCtx.fill();
+                break;
+
+              default:
+                sendBufferCtx.beginPath();
+                sendBufferCtx.arc(mouseX, mouseY, brushSize, 0, 2*Math.PI);
+                sendBufferCtx.fill();
+            }
+          
+            const imgDat = sendBufferCanvas.toDataURL();
+            
+            const data = {
+               x: 0,
+               y: 0,
+               height: canvas.height,
+               width: canvas.width,
+               imageData: imgDat,
+            };
+          
+            socket.emit('draw', data);
+          };
+
+        //Connect socket
+        const connectSocket = () => {
+             socket.emit('join');
+
+             sendBufferCanvas = document.createElement("canvas");
+             sendBufferCanvas.height = canvas.height;
+             sendBufferCanvas.width = canvas.width;
+             sendBufferCtx = sendBufferCanvas.getContext("2d");
+
+             socket.on('drawToCanvas', (data) => {
+               let image = new Image();
+
+               image.onload = () => {
+                  ctx.save();
+                  ctx.globalCompositeOperation = "source-over"; 
+                  ctx.drawImage(image, data.x, data.y, data.width, data.height);
+                  ctx.restore();
+               };
+
+               image.src = data.imageData;
+            });
+
+            //Clear socket
+            socket.on('clearAll', () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                sendBufferCtx.clearRect(0, 0, canvas.width, canvas.height);
+            });
+      };
+      //Get mouse position
+      const getMousePos = (canvas, e) => {
+           previousX = mouseX;
+           previousY = mouseY;
+
+           var bound = canvas.getBoundingClientRect();
+           mouseX = e.clientX - bound.left;
+           mouseY = e.clientY - bound.top;
+      };
+    
+    </script>
+</head>
+<body>
+    <h2 style='color:#33bbff;'>MULTI-USER DRAWING</h2>
+    <canvas id="topCanvas" height="600" width="800" style="border: 8px solid #000000;">Please use an HTML 5 browser.</canvas>
+    <div>
+        <label style='color:#33bbff; font-size:24px;'>Color:
+            <select id="colorChoice">
+                <option value="#E33030">Red</option>
+                <option value="#000000" selected>Black</option>
+                <option value="#FFFF48">Yellow</option>
+                <option value="#EA7930">Orange</option>
+                <option value="#3068EA">Blue</option>
+                <option value="#30EA38">Green</option>
+                <option value="#6130E3">Purple</option>
+                <option value="#6B2D1A">Brown?</option>
+                <option value="#6AEFEB">Cyan</option>
+                <option value="#EF6ADF">Pink</option>
+            </select>
+        </label>
+
+        <label style='color:#33bbff; font-size:24px;'>Brush Type:
+            <select id="typeChoice">
+                <option value='line'>Line</option>
+                <option value='circle' selected>Circle</option>
+                <option value='rectangle'>Rectangle</option>
+            </select>
+        </label>
+
+        <label style='color:#33bbff; font-size:24px;'>Brush Size:
+            <select id="sizeChoice">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option selected value="3">3</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="250">Pls No</option>
+            </select>
+        </label>
+
+        <span><input id="clearButton" type="button" value="CLEAR"/></span>
+    </div>
+</body>
+</html>
